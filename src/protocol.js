@@ -13,7 +13,7 @@ const backendAliases = new Map([
   ['opencode', 'opencode'],
 ]);
 
-export function normalizeBackend(value, fallback = 'youdao_web') {
+export function normalizeBackend(value, fallback = 'caiyun') {
   const raw = String(value || '').trim().toLowerCase();
   return backendAliases.get(raw) || fallback;
 }

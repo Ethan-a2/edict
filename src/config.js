@@ -122,7 +122,7 @@ export function loadConfig(overrides = {}) {
     authToken: get('TRANSLATION_SERVICE_AUTH_TOKEN', ['server', 'authToken']),
     maxTextChars: getInt('TRANSLATION_SERVICE_MAX_TEXT_CHARS', ['server', 'maxTextChars'], 20000),
     timeoutMs: getInt('TRANSLATION_SERVICE_TIMEOUT_MS', ['server', 'timeoutMs'], 30000),
-    defaultBackend: get('EDICT_DEFAULT_BACKEND', ['defaultBackend'], 'youdao_web'),
+    defaultBackend: get('EDICT_DEFAULT_BACKEND', ['defaultBackend'], 'caiyun'),
     credentials: {
       easydict: {
         ...easydictCredentialConfig,

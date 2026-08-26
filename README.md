@@ -41,7 +41,7 @@ edict serve
 
 ## 最简单的查询方式
 
-默认使用配置中的 `defaultBackend`，默认值为 `youdao_web`：
+默认使用配置中的 `defaultBackend`，默认值为 `caiyun`：
 
 ```bash
 curl 'http://localhost:8787/dicts/search?q=hello'
@@ -55,8 +55,8 @@ curl 'http://localhost:8787/dicts/search?q=你好'
   "query": "hello",
   "text": "你好",
   "translation": "你好",
-  "backend": "youdao_web",
-  "model": "youdao-web",
+  "backend": "caiyun",
+  "model": "caiyun",
   "source_language": "en",
   "target_language": "zh-CN"
 }
@@ -102,7 +102,7 @@ cp edict.config.example.json edict.config.json
     "host": "127.0.0.1",
     "port": 8787
   },
-  "defaultBackend": "youdao_web",
+  "defaultBackend": "caiyun",
   "credentials": {
     "easydict": {
       "enabled": true,

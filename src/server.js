@@ -153,7 +153,7 @@ function streamChat(res, response) {
 export function createServer({ config = loadConfig(), logger = console } = {}) {
   const backends = backendList(config);
   const configuredBuiltinModel = (config.backends?.builtin_ai || config.builtinAI || {}).model;
-  const defaultBackend = config.defaultBackend || 'youdao_web';
+  const defaultBackend = config.defaultBackend || 'caiyun';
   const server = http.createServer(async (req, res) => {
     addCors(res);
     if (req.method === 'OPTIONS') {
