@@ -18,7 +18,7 @@ test('parses the documented Chat Completions prompt', () => {
   assert.equal(request.backend, undefined);
   assert.equal(request.model, 'youdao-web');
   assert.equal(request.text, 'hello');
-  assert.equal(request.sourceLanguage, 'auto');
+  assert.equal(request.sourceLanguage, 'en');
   assert.equal(request.targetLanguage, 'zh-CN');
 });
 
@@ -32,4 +32,17 @@ test('parses explicit translation metadata', () => {
   assert.equal(request.backend, 'caiyun');
   assert.equal(request.sourceLanguage, 'en');
   assert.equal(request.targetLanguage, 'zh-CN');
+});
+
+test('automatically reverses direction for Chinese input', () => {
+  const request = parseTranslateRequest({ text: '你好' });
+  assert.equal(request.sourceLanguage, 'zh-CN');
+  assert.equal(request.targetLanguage, 'en');
+});
+
+test('rejects languages outside the Chinese-English scope', () => {
+  assert.throws(
+    () => parseTranslateRequest({ text: 'hello', source_language: 'ja', target_language: 'en' }),
+    (error) => error.code === 'unsupported_language',
+  );
 });

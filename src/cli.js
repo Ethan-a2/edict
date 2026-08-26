@@ -11,11 +11,12 @@ function usage() {
   translate-service health [--server URL]
 
 translate 选项:
-  --backend NAME       youdao_web | caiyun | builtin_ai | opencode（默认 youdao_web）
-  --from LANG          源语言代码或名称（默认 auto）
-  --to LANG            目标语言代码或名称（默认 zh-CN）
+  --backend NAME       youdao_web | caiyun | builtin_ai | opencode（默认读取配置）
+  --from LANG          源语言代码或名称（默认自动判断）
+  --to LANG            目标语言代码或名称（默认自动判断）
   --server URL         服务地址（默认 http://127.0.0.1:8787）
   --auth-token TOKEN   服务认证令牌
+  --config FILE        JSON 配置文件路径
   --json               输出完整 JSON
   --help               显示帮助
 
@@ -89,10 +90,10 @@ async function runTranslate(options, positional, config) {
     method: 'POST',
     headers: { ...authHeaders(options), 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      backend: options.backend || 'youdao_web',
+      backend: options.backend || config.defaultBackend,
       text,
-      source_language: options.from || 'auto',
-      target_language: options.to || 'zh-CN',
+      ...(options.from ? { source_language: options.from } : {}),
+      ...(options.to ? { target_language: options.to } : {}),
     }),
   });
   if (options.json) console.log(JSON.stringify(body, null, 2));
@@ -111,10 +112,11 @@ export async function runCli(argv = process.argv.slice(2)) {
     console.log(usage());
     return;
   }
-  const config = loadConfig(command === 'serve' ? {
-    ...(options.host ? { TRANSLATION_SERVICE_HOST: options.host } : {}),
-    ...(options.port ? { TRANSLATION_SERVICE_PORT: Number(options.port) } : {}),
-  } : {});
+  const config = loadConfig({
+    ...(options.config ? { EDICT_CONFIG_FILE: options.config } : {}),
+    ...(command === 'serve' && options.host ? { TRANSLATION_SERVICE_HOST: options.host } : {}),
+    ...(command === 'serve' && options.port ? { TRANSLATION_SERVICE_PORT: Number(options.port) } : {}),
+  });
   if (command === 'serve') {
     await startServer({ config });
     return;

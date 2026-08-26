@@ -1,6 +1,6 @@
 import { fetchWithTimeout, readJsonResponse } from '../http.js';
 import { ServiceError } from '../errors.js';
-import { assertText, configuredStatus, extractAssistantContent } from './common.js';
+import { assertText, configuredStatus, disabledStatus, extractAssistantContent } from './common.js';
 import { languageLabel } from '../languages.js';
 
 function chatEndpoint(endpoint) {
@@ -24,6 +24,7 @@ export class BuiltInAIBackend {
   }
 
   status() {
+    if (this.config.enabled === false) return disabledStatus();
     return this.config.endpoint && this.config.apiKey
       ? configuredStatus(true)
       : configuredStatus(false, '需要设置 BUILTIN_AI_ENDPOINT 和 BUILTIN_AI_API_KEY');
@@ -31,6 +32,9 @@ export class BuiltInAIBackend {
 
   async translate({ text, sourceLanguage = 'auto', targetLanguage = 'zh-CN' }) {
     assertText(text, this.config.maxTextChars);
+    if (this.config.enabled === false) {
+      throw new ServiceError('BuiltInAI 后端已禁用', { code: 'backend_disabled', status: 503 });
+    }
     if (!this.config.endpoint || !this.config.apiKey) {
       throw new ServiceError('BuiltInAI 未配置 BUILTIN_AI_ENDPOINT/BUILTIN_AI_API_KEY', {
         code: 'backend_not_configured',

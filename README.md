@@ -1,176 +1,283 @@
-# Translation Service
+# edict
 
-一个独立的本地翻译网关，把 Easydict 中的 Youdao Web、Caiyun、BuiltInAI，以及本机 `opencode` CLI 统一成 OpenAI-compatible 接口，并提供一个直接可用的 CLI。
+本地中英文翻译网关，兼容 Easydict 的 Youdao Web、Caiyun、BuiltInAI 和 `opencode`，并提供简单的 HTTP 词典查询接口。
 
-原始 `pot-desktop` 和 `Easydict` 仓库不会被修改。本项目也不会读取或复制 Easydict 中的内置密钥；Caiyun 和 BuiltInAI 必须配置你自己的凭证。
+项目位于 `/media/code/tools/edict`，不会修改 `pot-desktop` 或 `Easydict` 源码。
 
-## 支持后端
+## 特性
 
-| 后端 ID | 模型 ID | 凭证 | 说明 |
-| --- | --- | --- | --- |
-| `youdao_web` | `youdao-web` | 不需要 | 复用 Easydict 的 Youdao Web 动态 key + AES-128-CBC 流程；这是非官方 Web 接口，可能随网站变更 |
-| `caiyun` | `caiyun` | `CAIYUN_TOKEN` | Caiyun LingoCloud 文本翻译接口 |
-| `builtin_ai` | `builtin-ai` | `BUILTIN_AI_ENDPOINT`、`BUILTIN_AI_API_KEY` | 任何 OpenAI-compatible Chat Completions 服务；默认模型为 `glm-4-flash-250414` |
-| `opencode` | `opencode` | `opencode` 自身配置 | 无 shell 调用 `opencode run --format json`，解析 JSON 事件中的文本结果 |
+- 只处理中文和英文：英文自动翻译成中文，中文自动翻译成英文。
+- 输入尽可能简单，不需要传 `from`、`to`。
+- 支持 Youdao Web、Caiyun、BuiltInAI、`opencode` 四个后端。
+- 自动复用 Easydict 的加密默认凭证；明文只在进程内使用，不写入项目。
+- 每个后端可以通过配置文件或环境变量启用/禁用。
+- 提供 `/dicts/search`、`/dicts/youdao/search`、`/dicts/caiyun/search` 等 GET 接口。
+- 同时保留 OpenAI-compatible `/v1/chat/completions` 和专用 `/v1/translate`。
 
-## 安装和启动
+## 启动
 
-要求 Node.js 20 或更新版本；项目无第三方运行时依赖。
-
-```bash
-cp .env.example .env
-# 编辑 .env，至少按需设置 CAIYUN_TOKEN、BUILTIN_AI_* 等配置
-npm start
-```
-
-默认监听 `127.0.0.1:8787`。也可以：
+要求 Node.js 20 或更新版本：
 
 ```bash
-node bin/translate-service.js serve --host 127.0.0.1 --port 8787
+cd /media/code/tools/edict
+npm test
+node bin/translate-service.js serve
 ```
 
-服务默认只监听本机。若要暴露到其他机器，建议同时设置 `TRANSLATION_SERVICE_AUTH_TOKEN`，并在反向代理层启用 TLS。
+默认监听 `http://127.0.0.1:8787`。
 
-## CLI
-
-CLI 通过后台服务调用，不会绕过统一协议：
+也可以指定配置文件：
 
 ```bash
-translate-service translate --backend youdao_web --from en --to zh hello
-echo hello | translate-service translate --backend caiyun --from en --to zh
-translate-service models
-translate-service health
+node bin/translate-service.js serve --config /path/to/edict.config.json
 ```
 
-如果没有执行 `npm link`，可直接使用：
+如果希望直接安装命令：
 
 ```bash
-node bin/translate-service.js translate --backend opencode --from en --to zh hello
+npm link
+edict serve
 ```
 
-服务地址和认证令牌：
+## 最简单的查询方式
+
+默认使用配置中的 `defaultBackend`，默认值为 `youdao_web`：
 
 ```bash
-translate-service translate \
-  --server http://127.0.0.1:8787 \
-  --auth-token "$TRANSLATION_SERVICE_AUTH_TOKEN" \
-  --backend builtin_ai --from en --to zh hello
+curl 'http://localhost:8787/dicts/search?q=hello'
+curl 'http://localhost:8787/dicts/search?q=你好'
 ```
 
-## OpenAI-compatible API
-
-### 专用翻译接口
-
-```bash
-curl http://127.0.0.1:8787/v1/translate \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "backend": "youdao_web",
-    "source_language": "en",
-    "target_language": "zh-CN",
-    "text": "hello"
-  }'
-```
-
-返回：
+返回示例：
 
 ```json
 {
+  "query": "hello",
+  "text": "你好",
+  "translation": "你好",
   "backend": "youdao_web",
   "model": "youdao-web",
-  "text": "你好",
   "source_language": "en",
   "target_language": "zh-CN"
 }
 ```
 
-### Chat Completions
+指定后端：
 
-这个接口可以直接作为许多现有 OpenAI 客户端的 `base_url` 使用：
+```bash
+curl 'http://localhost:8787/dicts/youdao/search?q=hello'
+curl 'http://localhost:8787/dicts/caiyun/search?q=hello'
+curl 'http://localhost:8787/dicts/builtin-ai/search?q=hello'
+curl 'http://localhost:8787/dicts/opencode/search?q=hello'
+```
+
+兼容的后端路径别名包括：
+
+- `youdao`、`youdao_web`
+- `caiyun`
+- `builtin-ai`、`builtin_ai`
+- `opencode`
+
+`/dicts/search` 等接口只需要 `q` 参数；不传语言时自动判断中文/英文方向。也接受 `text` 作为 `q` 的别名。
+
+## 配置后端
+
+配置文件默认位置：
+
+```text
+./edict.config.json
+```
+
+可以从示例复制：
+
+```bash
+cp edict.config.example.json edict.config.json
+```
+
+示例：
+
+```json
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8787
+  },
+  "defaultBackend": "youdao_web",
+  "credentials": {
+    "easydict": {
+      "enabled": true,
+      "path": "/media/code/tools/Easydict/Easydict/Swift/Feature/DefaultAPIKeys/EncryptedSecretKeys.plist",
+      "bundleName": "Easydict"
+    }
+  },
+  "backends": {
+    "youdao_web": { "enabled": true },
+    "caiyun": { "enabled": true },
+    "builtin_ai": { "enabled": false },
+    "opencode": { "enabled": true, "dir": "/tmp" }
+  }
+}
+```
+
+后端禁用后，健康检查和模型列表会标记为不可用，调用会返回 `503 backend_disabled`。
+
+### Easydict 凭证复用
+
+默认会尝试读取并解密：
+
+```text
+/media/code/tools/Easydict/Easydict/Swift/Feature/DefaultAPIKeys/EncryptedSecretKeys.plist
+```
+
+支持的默认凭证包括：
+
+- `caiyunToken`
+- `builtInAIAPIKey`
+- `builtInAIEndpoint`
+
+如果不希望复用：
+
+```json
+{
+  "credentials": {
+    "easydict": { "enabled": false }
+  }
+}
+```
+
+也可以用环境变量关闭或指定位置：
+
+```bash
+EDICT_REUSE_EASYDICT_CREDENTIALS=false
+EASYDICT_SECRET_KEYS_PATH=/path/to/EncryptedSecretKeys.plist
+EASYDICT_BUNDLE_NAME=Easydict
+```
+
+显式配置优先于自动发现的凭证：
+
+```bash
+CAIYUN_TOKEN='your-token'
+BUILTIN_AI_ENDPOINT='https://your-openai-compatible-host/v1'
+BUILTIN_AI_API_KEY='your-api-key'
+```
+
+不要把明文凭证写进 Git。`.env` 和 `edict.config.json` 已加入 `.gitignore`。
+
+### 环境变量启停
+
+每个后端也可以通过环境变量启停：
+
+```bash
+YOUDAO_ENABLED=false
+CAIYUN_ENABLED=true
+BUILTIN_AI_ENABLED=false
+OPENCODE_ENABLED=true
+```
+
+环境变量优先于配置文件。
+
+## CLI
+
+CLI 默认也自动识别中英文方向：
+
+```bash
+edict translate hello
+edict translate 你好
+```
+
+指定后端：
+
+```bash
+edict translate --backend youdao_web hello
+edict translate --backend caiyun hello
+edict translate --backend opencode 你好
+```
+
+从 stdin 读取：
+
+```bash
+echo hello | edict translate --backend caiyun
+```
+
+查看后端状态：
+
+```bash
+edict health
+edict models
+```
+
+仍然可以显式指定语言，但一般不需要：
+
+```bash
+edict translate --from en --to zh hello
+```
+
+## OpenAI-compatible API
+
+### Chat Completions
 
 ```bash
 curl http://127.0.0.1:8787/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "youdao-web",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Translate into Simplified Chinese:\nhello"
-      }
-    ],
-    "stream": false
+    "messages": [{"role": "user", "content": "hello"}]
   }'
 ```
 
-也可以显式写服务元数据，避免依赖 prompt 识别：
+请求没有显式语言时，同样按中文/英文自动判断。也可以指定：
 
 ```json
 {
   "model": "caiyun",
-  "backend": "caiyun",
   "source_language": "en",
   "target_language": "zh-CN",
   "messages": [{"role": "user", "content": "hello"}]
 }
 ```
 
-`stream: true` 会以标准 SSE 返回一个完整翻译结果的单个内容 chunk。另有 `GET /v1/models` 和无需认证的 `GET /healthz`。
+支持 `stream: true`，返回标准 SSE。
 
-### Python OpenAI 客户端示例
-
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://127.0.0.1:8787/v1", api_key="local")
-result = client.chat.completions.create(
-    model="youdao-web",
-    messages=[{"role": "user", "content": "Translate into Simplified Chinese: hello"}],
-)
-print(result.choices[0].message.content)
-```
-
-### 认证
-
-设置 `TRANSLATION_SERVICE_AUTH_TOKEN` 后，除 `/healthz` 外的请求都需要以下任一形式：
-
-```http
-Authorization: Bearer <token>
-```
-
-或：
-
-```http
-X-API-Key: <token>
-```
-
-## 配置
-
-复制 `.env.example` 为 `.env`。环境变量优先级高于 `.env`：
-
-- `CAIYUN_TOKEN`：Caiyun 自己申请的 token。
-- `BUILTIN_AI_ENDPOINT`：可以填写完整的 `/v1/chat/completions`，也可以填写 base URL。
-- `BUILTIN_AI_API_KEY`：对应 OpenAI-compatible 服务的 API key。
-- `BUILTIN_AI_MODEL`：上游实际模型，默认 `glm-4-flash-250414`。
-- `OPENCODE_BIN`：可执行文件路径或 PATH 中的命令名，默认 `opencode`。
-- `OPENCODE_MODEL`：可选，格式遵循 `opencode run --model`；为空时使用 opencode 自己的默认模型/提供商。
-- `OPENCODE_DIR`：可选，传给 opencode 的工作目录。
-- `TRANSLATION_SERVICE_TIMEOUT_MS`、`OPENCODE_TIMEOUT_MS`：上游超时时间。
-
-## 验证
+### 专用接口
 
 ```bash
-npm test
-translate-service health
-translate-service translate --backend youdao_web --from en --to zh hello
-translate-service translate --backend opencode --from en --to zh hello
+curl http://127.0.0.1:8787/v1/translate \
+  -H 'Content-Type: application/json' \
+  -d '{"backend":"youdao_web","text":"hello"}'
 ```
 
-`/healthz` 和 `/v1/models` 会明确列出每个后端是否已配置/可执行。Caiyun、BuiltInAI 的“可用”需要你提供自己的凭证；本项目不会使用 Easydict 的私有内置 token。
+### 健康和模型列表
 
-## 安全和兼容性说明
+```bash
+curl http://127.0.0.1:8787/healthz
+curl http://127.0.0.1:8787/v1/models
+```
 
-- Youdao Web 是对 Easydict 当前 Web 流程的兼容实现，不是 Youdao 官方开放 API；请遵守目标站点的服务条款和访问限制。
-- `opencode` 使用 `child_process.spawn` 的参数数组并关闭 shell，翻译文本不会被当作 shell 命令执行。
-- 不要把 `.env`、API key、Caiyun token 或 opencode 的凭证提交到 Git。
-- 默认限制翻译文本长度为 20,000 字符，防止误用导致上游请求过大。
+## 认证
+
+默认只监听本机。如果需要通过网络访问，设置：
+
+```bash
+TRANSLATION_SERVICE_AUTH_TOKEN='local-secret'
+```
+
+调用时传：
+
+```bash
+curl 'http://127.0.0.1:8787/dicts/search?q=hello' \
+  -H 'Authorization: Bearer local-secret'
+```
+
+`/healthz` 不要求认证；其他接口需要 `Authorization: Bearer ...` 或 `X-API-Key`。
+
+## 当前验证
+
+在当前机器上已验证：
+
+- Youdao Web：可用，`hello -> 你好`、`你好 -> Hello`。
+- Caiyun：使用自动发现的 Easydict 凭证可用，`hello -> 你好`。
+- BuiltInAI：自动发现的 endpoint/key 可发起请求，但当前上游返回 HTTP 429，属于上游限流，不是本地配置缺失。
+- `opencode`：可用，默认在 `/tmp` 运行以避免扫描 `edict` 仓库，真实调用 `hello -> 你好` 成功；可通过 `OPENCODE_MODEL`、`OPENCODE_DIR` 覆盖。
+- 自动化测试：12 项全部通过。
+
+Youdao Web 是对 Easydict 当前 Web 流程的兼容实现，属于非官方 Web 接口，可能随目标站点变化。

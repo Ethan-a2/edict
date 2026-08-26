@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 
 import { fetchWithTimeout, readJsonResponse, readResponseText } from '../http.js';
 import { ServiceError } from '../errors.js';
-import { assertText, configuredStatus } from './common.js';
+import { assertText, configuredStatus, disabledStatus } from './common.js';
 import { normalizeLanguage, youdaoLanguageCode } from '../languages.js';
 
 const client = 'fanyideskweb';
@@ -78,7 +78,7 @@ export class YoudaoWebBackend {
   }
 
   status() {
-    return configuredStatus(true);
+    return this.config.enabled === false ? disabledStatus() : configuredStatus(true);
   }
 
   async getKey() {
@@ -104,6 +104,9 @@ export class YoudaoWebBackend {
   }
 
   async translate({ text, sourceLanguage = 'auto', targetLanguage = 'zh-CN' }) {
+    if (this.config.enabled === false) {
+      throw new ServiceError('Youdao Web 后端已禁用', { code: 'backend_disabled', status: 503 });
+    }
     assertText(text, this.config.maxTextChars);
     const from = youdaoLanguageCode(sourceLanguage);
     const to = youdaoLanguageCode(targetLanguage);

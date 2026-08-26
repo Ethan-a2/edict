@@ -1,11 +1,12 @@
 {
-  "name": "translation-service",
+  "name": "edict",
   "version": "0.1.0",
   "private": true,
-  "description": "OpenAI-compatible translation gateway for Easydict services and opencode CLI",
+  "description": "中英文翻译网关，兼容 Easydict 服务、词典 HTTP 查询和 OpenAI 客户端",
   "type": "module",
   "bin": {
-    "translate-service": "bin/translate-service.js"
+    "translate-service": "bin/translate-service.js",
+    "edict": "bin/translate-service.js"
   },
   "scripts": {
     "start": "node bin/translate-service.js serve",

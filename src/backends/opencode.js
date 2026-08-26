@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 import { ServiceError } from '../errors.js';
-import { assertText, configuredStatus, isExecutable } from './common.js';
+import { assertText, configuredStatus, disabledStatus, isExecutable } from './common.js';
 import { languageLabel } from '../languages.js';
 
 function parseJsonEvents(output) {
@@ -43,6 +43,7 @@ export class OpencodeBackend {
   }
 
   status() {
+    if (this.config.enabled === false) return disabledStatus();
     return isExecutable(this.config.bin)
       ? configuredStatus(true)
       : configuredStatus(false, `找不到可执行文件: ${this.config.bin}`);
@@ -50,6 +51,9 @@ export class OpencodeBackend {
 
   async translate({ text, sourceLanguage = 'auto', targetLanguage = 'zh-CN' }) {
     assertText(text, this.config.maxTextChars);
+    if (this.config.enabled === false) {
+      throw new ServiceError('opencode 后端已禁用', { code: 'backend_disabled', status: 503 });
+    }
     if (!isExecutable(this.config.bin)) {
       throw new ServiceError(`找不到 opencode 可执行文件: ${this.config.bin}`, {
         code: 'backend_unavailable',

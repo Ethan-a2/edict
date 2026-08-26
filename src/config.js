@@ -1,5 +1,8 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+
+import { loadEasydictCredentials } from './credentials.js';
 
 function parseDotEnv(contents) {
   const values = {};
@@ -18,61 +21,139 @@ function parseDotEnv(contents) {
   return values;
 }
 
-function readEnvFile() {
-  const file = process.env.TRANSLATION_SERVICE_ENV_FILE || path.resolve('.env');
+function parseJsonFile(file) {
   try {
-    return parseDotEnv(fs.readFileSync(file, 'utf8'));
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT') return {};
+    throw new Error(`无法读取配置文件 ${file}: ${error.message}`);
+  }
+}
+
+function readEnvFile(envFilePath) {
+  try {
+    return parseDotEnv(fs.readFileSync(envFilePath, 'utf8'));
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
     return {};
   }
 }
 
-function value(envFile, key, fallback = '') {
-  return process.env[key] ?? envFile[key] ?? fallback;
+function readConfigFile(configFilePath) {
+  if (!configFilePath) return {};
+  return parseJsonFile(configFilePath);
 }
 
-function integerValue(envFile, key, fallback) {
-  const parsed = Number.parseInt(value(envFile, key, String(fallback)), 10);
+function nestedValue(object, keys, fallback) {
+  let current = object;
+  for (const key of keys) {
+    if (!current || typeof current !== 'object' || !(key in current)) return fallback;
+    current = current[key];
+  }
+  return current;
+}
+
+function firstValue(values, fallback = '') {
+  return values.find((value) => value !== undefined && value !== null) ?? fallback;
+}
+
+function firstNonEmpty(values, fallback = '') {
+  return values.find((value) => value !== undefined && value !== null && String(value).trim() !== '') ?? fallback;
+}
+
+function booleanValue(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  return ['1', 'true', 'yes', 'on', 'enabled'].includes(String(value).trim().toLowerCase());
+}
+
+function integerValue(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function envOrConfig({ env, config, envKey, configPath, fallback }) {
+  return firstValue([env[envKey], nestedValue(config, configPath, undefined)], fallback);
+}
+
+function enabledValue({ env, config, envKey, configPath, fallback = true }) {
+  return booleanValue(envOrConfig({ env, config, envKey, configPath, fallback }), fallback);
+}
+
 export function loadConfig(overrides = {}) {
-  const envFile = readEnvFile();
-  const get = (key, fallback = '') => overrides[key] ?? value(envFile, key, fallback);
-  const getInt = (key, fallback) => {
-    if (overrides[key] !== undefined) {
-      const parsed = Number.parseInt(String(overrides[key]), 10);
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-    }
-    return integerValue(envFile, key, fallback);
+  const cwd = overrides.EDICT_CWD || process.cwd();
+  const envFilePath = overrides.TRANSLATION_SERVICE_ENV_FILE
+    || process.env.TRANSLATION_SERVICE_ENV_FILE
+    || path.join(cwd, '.env');
+  const env = { ...readEnvFile(envFilePath), ...process.env, ...overrides };
+  const configFilePath = env.EDICT_CONFIG_FILE
+    ? path.resolve(cwd, env.EDICT_CONFIG_FILE)
+    : path.join(cwd, 'edict.config.json');
+  const fileConfig = readConfigFile(configFilePath);
+  const get = (envKey, configPath, fallback = '') => envOrConfig({ env, config: fileConfig, envKey, configPath, fallback });
+  const getInt = (envKey, configPath, fallback) => integerValue(get(envKey, configPath, fallback), fallback);
+
+  const reuseEasydictCredentials = enabledValue({
+    env,
+    config: fileConfig,
+    envKey: 'EDICT_REUSE_EASYDICT_CREDENTIALS',
+    configPath: ['credentials', 'easydict', 'enabled'],
+    fallback: true,
+  });
+  const easydictCredentialConfig = {
+    enabled: reuseEasydictCredentials,
+    path: get('EASYDICT_SECRET_KEYS_PATH', ['credentials', 'easydict', 'path']),
+    root: get('EASYDICT_ROOT', ['credentials', 'easydict', 'root']),
+    bundleName: get('EASYDICT_BUNDLE_NAME', ['credentials', 'easydict', 'bundleName'], 'Easydict'),
   };
+  const easydictCredentials = loadEasydictCredentials(easydictCredentialConfig);
+  const discovered = easydictCredentials.values;
+
+  const getSecret = (envKey, configPath, discoveredKey, fallback = '') => firstNonEmpty([
+    env[envKey],
+    nestedValue(fileConfig, configPath, undefined),
+    discovered[discoveredKey],
+    fallback,
+  ], fallback);
 
   return {
-    host: get('TRANSLATION_SERVICE_HOST', '127.0.0.1'),
-    port: getInt('TRANSLATION_SERVICE_PORT', 8787),
-    authToken: get('TRANSLATION_SERVICE_AUTH_TOKEN'),
-    maxTextChars: getInt('TRANSLATION_SERVICE_MAX_TEXT_CHARS', 20000),
-    timeoutMs: getInt('TRANSLATION_SERVICE_TIMEOUT_MS', 30000),
-    youdao: {
-      keyEndpoint: get('YOUDAO_KEY_ENDPOINT', 'https://dict.youdao.com/webtranslate/key'),
-      translateEndpoint: get('YOUDAO_TRANSLATE_ENDPOINT', 'https://dict.youdao.com/webtranslate'),
-      cookie: get('YOUDAO_COOKIE'),
+    host: firstValue([env.TRANSLATION_SERVICE_HOST, nestedValue(fileConfig, ['server', 'host'], undefined), fileConfig.host, '127.0.0.1']),
+    port: integerValue(firstValue([env.TRANSLATION_SERVICE_PORT, nestedValue(fileConfig, ['server', 'port'], undefined), fileConfig.port, 8787]), 8787),
+    authToken: get('TRANSLATION_SERVICE_AUTH_TOKEN', ['server', 'authToken']),
+    maxTextChars: getInt('TRANSLATION_SERVICE_MAX_TEXT_CHARS', ['server', 'maxTextChars'], 20000),
+    timeoutMs: getInt('TRANSLATION_SERVICE_TIMEOUT_MS', ['server', 'timeoutMs'], 30000),
+    defaultBackend: get('EDICT_DEFAULT_BACKEND', ['defaultBackend'], 'youdao_web'),
+    credentials: {
+      easydict: {
+        ...easydictCredentialConfig,
+        source: easydictCredentials.source,
+      },
     },
-    caiyun: {
-      token: get('CAIYUN_TOKEN'),
-      endpoint: get('CAIYUN_ENDPOINT', 'https://api.interpreter.caiyunai.com/v1/translator'),
-    },
-    builtinAI: {
-      endpoint: get('BUILTIN_AI_ENDPOINT'),
-      apiKey: get('BUILTIN_AI_API_KEY'),
-      model: get('BUILTIN_AI_MODEL', 'glm-4-flash-250414'),
-    },
-    opencode: {
-      bin: get('OPENCODE_BIN', 'opencode'),
-      model: get('OPENCODE_MODEL'),
-      dir: get('OPENCODE_DIR'),
-      timeoutMs: getInt('OPENCODE_TIMEOUT_MS', 120000),
+    backends: {
+      youdao_web: {
+        enabled: enabledValue({ env, config: fileConfig, envKey: 'YOUDAO_ENABLED', configPath: ['backends', 'youdao_web', 'enabled'] }),
+        keyEndpoint: get('YOUDAO_KEY_ENDPOINT', ['backends', 'youdao_web', 'keyEndpoint'], 'https://dict.youdao.com/webtranslate/key'),
+        translateEndpoint: get('YOUDAO_TRANSLATE_ENDPOINT', ['backends', 'youdao_web', 'translateEndpoint'], 'https://dict.youdao.com/webtranslate'),
+        cookie: get('YOUDAO_COOKIE', ['backends', 'youdao_web', 'cookie']),
+      },
+      caiyun: {
+        enabled: enabledValue({ env, config: fileConfig, envKey: 'CAIYUN_ENABLED', configPath: ['backends', 'caiyun', 'enabled'] }),
+        token: getSecret('CAIYUN_TOKEN', ['backends', 'caiyun', 'token'], 'caiyunToken'),
+        endpoint: get('CAIYUN_ENDPOINT', ['backends', 'caiyun', 'endpoint'], 'https://api.interpreter.caiyunai.com/v1/translator'),
+      },
+      builtin_ai: {
+        enabled: enabledValue({ env, config: fileConfig, envKey: 'BUILTIN_AI_ENABLED', configPath: ['backends', 'builtin_ai', 'enabled'] }),
+        endpoint: getSecret('BUILTIN_AI_ENDPOINT', ['backends', 'builtin_ai', 'endpoint'], 'builtInAIEndpoint'),
+        apiKey: getSecret('BUILTIN_AI_API_KEY', ['backends', 'builtin_ai', 'apiKey'], 'builtInAIAPIKey'),
+        model: get('BUILTIN_AI_MODEL', ['backends', 'builtin_ai', 'model'], 'glm-4-flash-250414'),
+      },
+      opencode: {
+        enabled: enabledValue({ env, config: fileConfig, envKey: 'OPENCODE_ENABLED', configPath: ['backends', 'opencode', 'enabled'] }),
+        bin: get('OPENCODE_BIN', ['backends', 'opencode', 'bin'], 'opencode'),
+        model: get('OPENCODE_MODEL', ['backends', 'opencode', 'model']),
+        dir: get('OPENCODE_DIR', ['backends', 'opencode', 'dir'], os.tmpdir()),
+        timeoutMs: getInt('OPENCODE_TIMEOUT_MS', ['backends', 'opencode', 'timeoutMs'], 120000),
+      },
     },
   };
 }

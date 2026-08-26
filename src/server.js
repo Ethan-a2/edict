@@ -82,11 +82,16 @@ function addCors(res) {
 }
 
 function backendList(config) {
+  const configured = config.backends || {};
+  const youdao = configured.youdao_web || config.youdao || {};
+  const caiyun = configured.caiyun || config.caiyun || {};
+  const builtinAI = configured.builtin_ai || config.builtinAI || {};
+  const opencode = configured.opencode || config.opencode || {};
   return [
-    new YoudaoWebBackend({ ...config.youdao, timeoutMs: config.timeoutMs, maxTextChars: config.maxTextChars, cookie: config.youdao.cookie }),
-    new CaiyunBackend({ ...config.caiyun, timeoutMs: config.timeoutMs, maxTextChars: config.maxTextChars }),
-    new BuiltInAIBackend({ ...config.builtinAI, timeoutMs: config.timeoutMs, maxTextChars: config.maxTextChars }),
-    new OpencodeBackend({ ...config.opencode, maxTextChars: config.maxTextChars }),
+    new YoudaoWebBackend({ ...youdao, timeoutMs: config.timeoutMs, maxTextChars: config.maxTextChars }),
+    new CaiyunBackend({ ...caiyun, timeoutMs: config.timeoutMs, maxTextChars: config.maxTextChars }),
+    new BuiltInAIBackend({ ...builtinAI, timeoutMs: config.timeoutMs, maxTextChars: config.maxTextChars }),
+    new OpencodeBackend({ ...opencode, maxTextChars: config.maxTextChars }),
   ];
 }
 
@@ -114,6 +119,18 @@ function resolveBackend(backends, requested, configuredBuiltinModel) {
   });
 }
 
+function dictionaryResponse({ query, backend, translated, sourceLanguage, targetLanguage }) {
+  return {
+    query,
+    text: translated,
+    translation: translated,
+    backend: backend.id(),
+    model: backendModel(backend),
+    source_language: sourceLanguage,
+    target_language: targetLanguage,
+  };
+}
+
 function streamChat(res, response) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
@@ -135,6 +152,8 @@ function streamChat(res, response) {
 
 export function createServer({ config = loadConfig(), logger = console } = {}) {
   const backends = backendList(config);
+  const configuredBuiltinModel = (config.backends?.builtin_ai || config.builtinAI || {}).model;
+  const defaultBackend = config.defaultBackend || 'youdao_web';
   const server = http.createServer(async (req, res) => {
     addCors(res);
     if (req.method === 'OPTIONS') {
@@ -173,10 +192,32 @@ export function createServer({ config = loadConfig(), logger = console } = {}) {
         });
         return;
       }
+      if (req.method === 'GET' && /^\/dicts(?:\/([^/]+))?\/search$/iu.test(url.pathname)) {
+        const match = url.pathname.match(/^\/dicts(?:\/([^/]+))?\/search$/iu);
+        const requestedBackend = match?.[1] ? normalizeBackend(match[1], '') : defaultBackend;
+        if (!requestedBackend) {
+          throw new ServiceError(`未知翻译后端: ${match?.[1]}`, { code: 'unknown_backend', status: 400 });
+        }
+        const query = url.searchParams.get('q') ?? url.searchParams.get('text') ?? '';
+        if (!query.trim()) {
+          throw new ServiceError('缺少查询参数 q', { code: 'invalid_request', status: 400 });
+        }
+        const request = parseTranslateRequest({ backend: requestedBackend, text: query });
+        const backend = resolveBackend(backends, request.backend, configuredBuiltinModel);
+        const translated = await backend.translate(request);
+        json(res, 200, dictionaryResponse({
+          query,
+          backend,
+          translated,
+          sourceLanguage: request.sourceLanguage,
+          targetLanguage: request.targetLanguage,
+        }));
+        return;
+      }
       if ((url.pathname === '/v1/translate' || url.pathname === '/v1/chat/completions') && req.method === 'POST') {
         const body = await readJson(req, Math.max(config.maxTextChars * 4, 1024 * 1024));
         const request = url.pathname === '/v1/translate' ? parseTranslateRequest(body) : parseChatRequest(body);
-        const backend = resolveBackend(backends, request.backend || request.model || 'youdao_web', config.builtinAI.model);
+        const backend = resolveBackend(backends, request.backend || request.model || defaultBackend, configuredBuiltinModel);
         const translated = await backend.translate(request);
         if (url.pathname === '/v1/translate') {
           json(res, 200, {

@@ -71,3 +71,35 @@ test('server protects non-health endpoints when auth is configured', async () =>
     await new Promise((resolve) => server.close(resolve));
   }
 });
+
+test('server exposes dict routes and honors backend disable switches', async () => {
+  const server = createServer({
+    config: {
+      host: '127.0.0.1',
+      port: 0,
+      authToken: '',
+      maxTextChars: 1000,
+      timeoutMs: 2000,
+      defaultBackend: 'caiyun',
+      backends: {
+        youdao_web: { enabled: false },
+        caiyun: { enabled: false, token: '' },
+        builtin_ai: { enabled: false },
+        opencode: { enabled: false },
+      },
+    },
+    logger: { error() {}, log() {} },
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    const response = await request(baseUrl, '/dicts/caiyun/search?q=hello');
+    assert.equal(response.status, 503);
+    assert.equal(JSON.parse(response.body).error.code, 'backend_disabled');
+    const missingQuery = await request(baseUrl, '/dicts/search');
+    assert.equal(missingQuery.status, 400);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
+});

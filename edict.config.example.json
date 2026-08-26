@@ -1,0 +1,24 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8787,
+    "timeoutMs": 30000
+  },
+  "defaultBackend": "youdao_web",
+  "credentials": {
+    "easydict": {
+      "enabled": true,
+      "path": "/media/code/tools/Easydict/Easydict/Swift/Feature/DefaultAPIKeys/EncryptedSecretKeys.plist",
+      "bundleName": "Easydict"
+    }
+  },
+  "backends": {
+    "youdao_web": { "enabled": true },
+    "caiyun": { "enabled": true },
+    "builtin_ai": {
+      "enabled": true,
+      "model": "glm-4-flash-250414"
+    },
+    "opencode": { "enabled": true, "dir": "/tmp" }
+  }
+}

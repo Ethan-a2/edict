@@ -1,6 +1,6 @@
 import { fetchWithTimeout, readJsonResponse } from '../http.js';
 import { ServiceError } from '../errors.js';
-import { assertText, configuredStatus } from './common.js';
+import { assertText, configuredStatus, disabledStatus } from './common.js';
 import { caiyunTransType } from '../languages.js';
 
 export class CaiyunBackend {
@@ -17,6 +17,7 @@ export class CaiyunBackend {
   }
 
   status() {
+    if (this.config.enabled === false) return disabledStatus();
     return this.config.token
       ? configuredStatus(true)
       : configuredStatus(false, '需要设置 CAIYUN_TOKEN');
@@ -24,6 +25,9 @@ export class CaiyunBackend {
 
   async translate({ text, sourceLanguage = 'auto', targetLanguage = 'zh-CN' }) {
     assertText(text, this.config.maxTextChars);
+    if (this.config.enabled === false) {
+      throw new ServiceError('Caiyun 后端已禁用', { code: 'backend_disabled', status: 503 });
+    }
     if (!this.config.token) {
       throw new ServiceError('Caiyun 未配置 CAIYUN_TOKEN', {
         code: 'backend_not_configured',

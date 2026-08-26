@@ -9,6 +9,10 @@ export function configuredStatus(configured, unavailableReason) {
     : { available: false, reason: unavailableReason };
 }
 
+export function disabledStatus() {
+  return { available: false, enabled: false, reason: '后端已在配置中禁用' };
+}
+
 export function isExecutable(command) {
   if (!command) return false;
   if (command.includes(path.sep)) {

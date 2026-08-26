@@ -130,3 +130,27 @@ export function languageLabel(language) {
     tr: 'Turkish',
   }[normalized] || normalized;
 }
+
+export function detectChineseEnglish(text) {
+  const value = String(text || '').trim();
+  if (!value) return { sourceLanguage: 'en', targetLanguage: 'zh-CN' };
+  if (/[\u3400-\u9fff]/u.test(value)) {
+    return { sourceLanguage: 'zh-CN', targetLanguage: 'en' };
+  }
+  return { sourceLanguage: 'en', targetLanguage: 'zh-CN' };
+}
+
+export function resolveChineseEnglishDirection(text, sourceLanguage, targetLanguage) {
+  const source = normalizeLanguage(sourceLanguage, 'auto');
+  const target = normalizeLanguage(targetLanguage, 'auto');
+  if (source !== 'auto' && target !== 'auto') return { sourceLanguage: source, targetLanguage: target };
+  const detected = detectChineseEnglish(text);
+  return {
+    sourceLanguage: source === 'auto' ? detected.sourceLanguage : source,
+    targetLanguage: target === 'auto' ? detected.targetLanguage : target,
+  };
+}
+
+export function isChineseEnglishLanguage(language) {
+  return ['en', 'zh-CN', 'zh-TW'].includes(normalizeLanguage(language, 'auto'));
+}

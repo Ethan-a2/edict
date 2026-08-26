@@ -1,6 +1,6 @@
 import { ServiceError } from './errors.js';
 import { extractMessageContent } from './backends/common.js';
-import { normalizeLanguage } from './languages.js';
+import { isChineseEnglishLanguage, normalizeLanguage, resolveChineseEnglishDirection } from './languages.js';
 
 const backendAliases = new Map([
   ['youdao', 'youdao_web'],
@@ -40,7 +40,7 @@ function textFromMessages(messages) {
 
 function parsePrompt(text) {
   let sourceLanguage = 'auto';
-  let targetLanguage = 'zh-CN';
+  let targetLanguage = 'auto';
   let translationText = text;
 
   const xmlText = text.match(/<text>\s*([\s\S]*?)\s*<\/text>/iu);
@@ -78,12 +78,20 @@ export function parseTranslateRequest(body) {
   if (typeof text !== 'string' || !text.trim()) {
     throw new ServiceError('text 必须是非空字符串', { code: 'invalid_request', status: 400 });
   }
+  const direction = resolveChineseEnglishDirection(
+    text,
+    request.source_language ?? request.sourceLanguage ?? request.from,
+    request.target_language ?? request.targetLanguage ?? request.to,
+  );
+  if (!isChineseEnglishLanguage(direction.sourceLanguage) || !isChineseEnglishLanguage(direction.targetLanguage)) {
+    throw new ServiceError('edict 目前只支持中文和英文互译', { code: 'unsupported_language', status: 400 });
+  }
   return {
     backend: request.backend || request.service ? normalizeBackend(request.backend ?? request.service, '') : undefined,
     model: request.model,
     text,
-    sourceLanguage: normalizeLanguage(request.source_language ?? request.sourceLanguage ?? request.from, 'auto'),
-    targetLanguage: normalizeLanguage(request.target_language ?? request.targetLanguage ?? request.to, 'zh-CN'),
+    sourceLanguage: direction.sourceLanguage,
+    targetLanguage: direction.targetLanguage,
   };
 }
 
@@ -92,12 +100,20 @@ export function parseChatRequest(body) {
   const prompt = textFromMessages(request.messages);
   const parsedPrompt = parsePrompt(prompt);
   const metadata = request.metadata && typeof request.metadata === 'object' ? request.metadata : {};
+  const direction = resolveChineseEnglishDirection(
+    request.text ?? parsedPrompt.text,
+    request.source_language ?? request.sourceLanguage ?? request.from ?? metadata.source_language ?? parsedPrompt.sourceLanguage,
+    request.target_language ?? request.targetLanguage ?? request.to ?? metadata.target_language ?? parsedPrompt.targetLanguage,
+  );
+  if (!isChineseEnglishLanguage(direction.sourceLanguage) || !isChineseEnglishLanguage(direction.targetLanguage)) {
+    throw new ServiceError('edict 目前只支持中文和英文互译', { code: 'unsupported_language', status: 400 });
+  }
   return {
     backend: request.backend || request.service ? normalizeBackend(request.backend ?? request.service, '') : undefined,
     model: request.model || undefined,
     text: request.text ?? parsedPrompt.text,
-    sourceLanguage: normalizeLanguage(request.source_language ?? request.sourceLanguage ?? request.from ?? metadata.source_language ?? parsedPrompt.sourceLanguage, 'auto'),
-    targetLanguage: normalizeLanguage(request.target_language ?? request.targetLanguage ?? request.to ?? metadata.target_language ?? parsedPrompt.targetLanguage, 'zh-CN'),
+    sourceLanguage: direction.sourceLanguage,
+    targetLanguage: direction.targetLanguage,
     stream: request.stream === true,
   };
 }
