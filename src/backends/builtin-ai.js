@@ -57,6 +57,7 @@ export class BuiltInAIBackend {
       headers,
       body: JSON.stringify({
         model: this.config.model,
+        max_tokens: 1024,
         temperature: 0,
         stream: false,
         messages: [
