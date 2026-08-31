@@ -4,7 +4,7 @@ Description=Edict Chinese-English Translation Service
 [Service]
 Type=simple
 WorkingDirectory=/media/code/tools/edict
-ExecStart=/usr/bin/node /media/code/tools/edict/bin/translate-service.js serve
+ExecStart=/usr/bin/node /media/code/tools/edict/bin/translate-service.js serve --config /media/code/tools/edict/edict.config.json
 Restart=on-failure
 RestartSec=3
 Environment=NODE_ENV=production
