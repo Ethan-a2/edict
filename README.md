@@ -113,13 +113,36 @@ cp edict.config.example.json edict.config.json
   "backends": {
     "youdao_web": { "enabled": true },
     "caiyun": { "enabled": true },
-    "builtin_ai": { "enabled": false },
+    "builtin_ai": {
+      "enabled": true,
+      "endpoint": "http://127.0.0.1:11435/chat/completions",
+      "model": "Qwen3.5-2B"
+    },
     "opencode": { "enabled": true, "dir": "/tmp" }
   }
 }
 ```
 
 后端禁用后，健康检查和模型列表会标记为不可用，调用会返回 `503 backend_disabled`。
+
+### 本地 Qwen3.5-2B
+
+`Qwen3.5-2B` 可以直接复用 `builtin_ai` 这个 OpenAI-compatible 后端。由于本地服务的接口是 `/chat/completions` 而不是 `/v1/chat/completions`，配置时填完整地址：
+
+```json
+{
+  "defaultBackend": "builtin_ai",
+  "backends": {
+    "builtin_ai": {
+      "enabled": true,
+      "endpoint": "http://127.0.0.1:11435/chat/completions",
+      "model": "Qwen3.5-2B"
+    }
+  }
+}
+```
+
+本地 Qwen 服务不要求 API Key；`BUILTIN_AI_API_KEY` 可以留空。远程 OpenAI-compatible 服务仍可填写 API Key，适配器只会在配置了 Key 时发送 `Authorization` 请求头。配置后，`Qwen3.5-2B` 会出现在 `/v1/models`，并可直接作为 Chat Completions 的 `model` 值。
 
 ### Easydict 凭证复用
 
@@ -159,6 +182,7 @@ EASYDICT_BUNDLE_NAME=Easydict
 CAIYUN_TOKEN='your-token'
 BUILTIN_AI_ENDPOINT='https://your-openai-compatible-host/v1'
 BUILTIN_AI_API_KEY='your-api-key'
+BUILTIN_AI_MODEL='Qwen3.5-2B'
 ```
 
 不要把明文凭证写进 Git。`.env` 和 `edict.config.json` 已加入 `.gitignore`。
@@ -236,6 +260,31 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 }
 ```
 
+使用本地 `Qwen3.5-2B` 时，先启动服务：
+
+```bash
+node bin/translate-service.js serve --config /path/to/edict.config.json
+```
+
+然后通过 edict 的 `8787` 端口调用，不要直接把业务请求发到模型端口 `11435`：
+
+```bash
+curl http://127.0.0.1:8787/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "Qwen3.5-2B",
+    "messages": [{"role": "user", "content": "The local translation gateway preserves the original paragraph structure. It automatically detects whether the input is Chinese or English.\n\nThis makes it convenient to translate documentation without changing the surrounding formatting."}]
+  }'
+```
+
+反向翻译只需把 `messages[0].content` 换成中文段落；服务会根据文本自动选择 `en -> zh-CN` 或 `zh-CN -> en`。也可以用专用接口显式选择后端：
+
+```bash
+curl http://127.0.0.1:8787/v1/translate \
+  -H 'Content-Type: application/json' \
+  -d '{"backend":"builtin_ai","text":"本地翻译网关会保留原始段落结构。"}'
+```
+
 支持 `stream: true`，返回标准 SSE。
 
 ### 专用接口
@@ -278,6 +327,25 @@ curl 'http://127.0.0.1:8787/dicts/search?q=hello' \
 - Caiyun：使用自动发现的 Easydict 凭证可用，`hello -> 你好`。
 - BuiltInAI：自动发现的 endpoint/key 可发起请求，但当前上游返回 HTTP 429，属于上游限流，不是本地配置缺失。
 - `opencode`：可用，默认在 `/tmp` 运行以避免扫描 `edict` 仓库，真实调用 `hello -> 你好` 成功；可通过 `OPENCODE_MODEL`、`OPENCODE_DIR` 覆盖。
-- 自动化测试：12 项全部通过。
+- `Qwen3.5-2B`：2026-08-31 通过 `http://127.0.0.1:11435/chat/completions` 实测，英文段落和中文段落双向翻译成功；返回中的 `<think>...</think>` 思考块会被适配器剥离。
+- 自动化测试：16 项全部通过。
+
+实测请求结果（省略动态的 `id` 和 `created` 字段）：
+
+英文段落 -> 中文：
+
+```text
+本地翻译网关保持原始段落结构。它自动检测输入是否为中文或英文，然后将文本发送至配置的模型。
+
+这使得在不改变周围格式的情况下翻译文档变得方便。
+```
+
+中文段落 -> English：
+
+```text
+The local translation gateway preserves the original paragraph structure and automatically determines whether the input is Chinese or English.
+
+This allows for convenient translation of technical documents without altering the surrounding formatting.
+```
 
 Youdao Web 是对 Easydict 当前 Web 流程的兼容实现，属于非官方 Web 接口，可能随目标站点变化。

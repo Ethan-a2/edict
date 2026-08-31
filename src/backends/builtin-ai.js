@@ -10,6 +10,12 @@ function chatEndpoint(endpoint) {
   return `${normalized}/v1/chat/completions`;
 }
 
+function translationContent(content) {
+  return extractAssistantContent(content)
+    .replace(/^\s*<think>[\s\S]*?<\/think>\s*/iu, '')
+    .trim();
+}
+
 export class BuiltInAIBackend {
   constructor(config) {
     this.config = config;
@@ -20,14 +26,14 @@ export class BuiltInAIBackend {
   }
 
   model() {
-    return 'builtin-ai';
+    return this.config.model || 'builtin-ai';
   }
 
   status() {
     if (this.config.enabled === false) return disabledStatus();
-    return this.config.endpoint && this.config.apiKey
+    return this.config.endpoint
       ? configuredStatus(true)
-      : configuredStatus(false, '需要设置 BUILTIN_AI_ENDPOINT 和 BUILTIN_AI_API_KEY');
+      : configuredStatus(false, '需要设置 BUILTIN_AI_ENDPOINT');
   }
 
   async translate({ text, sourceLanguage = 'auto', targetLanguage = 'zh-CN' }) {
@@ -35,19 +41,20 @@ export class BuiltInAIBackend {
     if (this.config.enabled === false) {
       throw new ServiceError('BuiltInAI 后端已禁用', { code: 'backend_disabled', status: 503 });
     }
-    if (!this.config.endpoint || !this.config.apiKey) {
-      throw new ServiceError('BuiltInAI 未配置 BUILTIN_AI_ENDPOINT/BUILTIN_AI_API_KEY', {
+    if (!this.config.endpoint) {
+      throw new ServiceError('BuiltInAI 未配置 BUILTIN_AI_ENDPOINT', {
         code: 'backend_not_configured',
         status: 503,
       });
     }
+    const headers = {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    };
+    if (this.config.apiKey) headers.Authorization = `Bearer ${this.config.apiKey}`;
     const response = await fetchWithTimeout(chatEndpoint(this.config.endpoint), {
       method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${this.config.apiKey}`,
-        'Content-Type': 'application/json',
-      },
+      headers,
       body: JSON.stringify({
         model: this.config.model,
         temperature: 0,
@@ -65,7 +72,7 @@ export class BuiltInAIBackend {
       }),
     }, this.config.timeoutMs);
     const body = await readJsonResponse(response);
-    const translated = extractAssistantContent(body?.choices?.[0]?.message?.content).trim();
+    const translated = translationContent(body?.choices?.[0]?.message?.content);
     if (!translated) {
       throw new ServiceError('BuiltInAI 未返回翻译结果', {
         code: 'empty_translation',

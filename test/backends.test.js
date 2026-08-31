@@ -90,3 +90,34 @@ test('BuiltInAI adapter uses OpenAI-compatible Chat Completions', async () => {
     assert.equal(await backend.translate({ text: 'hello', sourceLanguage: 'en', targetLanguage: 'zh-CN' }), '你好');
   });
 });
+
+test('BuiltInAI adapter supports an unauthenticated local Qwen endpoint', async () => {
+  await withServer(async (req, res) => {
+    assert.equal(req.url, '/chat/completions');
+    assert.equal(req.headers.authorization, undefined);
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    assert.equal(body.model, 'Qwen3.5-2B');
+    assert.match(body.messages[1].content, /first line\nsecond line/u);
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ choices: [{ message: { content: '<think>内部推理</think>\n\n第一行\n第二行' } }] }));
+  }, async (baseUrl) => {
+    const backend = new BuiltInAIBackend({
+      ...baseConfig,
+      endpoint: `${baseUrl}/chat/completions`,
+      apiKey: '',
+      model: 'Qwen3.5-2B',
+    });
+    assert.equal(backend.model(), 'Qwen3.5-2B');
+    assert.equal(backend.status().available, true);
+    assert.equal(
+      await backend.translate({
+        text: 'first line\nsecond line',
+        sourceLanguage: 'en',
+        targetLanguage: 'zh-CN',
+      }),
+      '第一行\n第二行',
+    );
+  });
+});

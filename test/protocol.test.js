@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { normalizeLanguage, caiyunTransType, youdaoLanguageCode } from '../src/languages.js';
-import { parseChatRequest, parseTranslateRequest } from '../src/protocol.js';
+import { modelBackend, parseChatRequest, parseTranslateRequest } from '../src/protocol.js';
 
 test('normalizes common language names for both Easydict backends', () => {
   assert.equal(normalizeLanguage('Simplified Chinese'), 'zh-CN');
@@ -32,6 +32,10 @@ test('parses explicit translation metadata', () => {
   assert.equal(request.backend, 'caiyun');
   assert.equal(request.sourceLanguage, 'en');
   assert.equal(request.targetLanguage, 'zh-CN');
+});
+
+test('routes the configured Qwen model to builtin_ai', () => {
+  assert.equal(modelBackend('Qwen3.5-2B', 'Qwen3.5-2B'), 'builtin_ai');
 });
 
 test('automatically reverses direction for Chinese input', () => {

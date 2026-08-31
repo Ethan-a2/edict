@@ -20,3 +20,29 @@ test('uses caiyun as the default backend', () => {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 });
+
+test('loads the local Qwen OpenAI-compatible backend configuration', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'edict-qwen-config-'));
+  try {
+    fs.writeFileSync(path.join(cwd, 'edict.config.json'), JSON.stringify({
+      backends: {
+        builtin_ai: {
+          enabled: true,
+          endpoint: 'http://127.0.0.1:11435/chat/completions',
+          model: 'Qwen3.5-2B',
+        },
+      },
+    }));
+    const config = loadConfig({
+      EDICT_CWD: cwd,
+      EDICT_REUSE_EASYDICT_CREDENTIALS: 'false',
+      TRANSLATION_SERVICE_ENV_FILE: path.join(cwd, '.env'),
+      BUILTIN_AI_ENDPOINT: undefined,
+      BUILTIN_AI_MODEL: undefined,
+    });
+    assert.equal(config.backends.builtin_ai.endpoint, 'http://127.0.0.1:11435/chat/completions');
+    assert.equal(config.backends.builtin_ai.model, 'Qwen3.5-2B');
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});

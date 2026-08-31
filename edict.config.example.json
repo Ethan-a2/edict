@@ -17,7 +17,8 @@
     "caiyun": { "enabled": true },
     "builtin_ai": {
       "enabled": true,
-      "model": "glm-4-flash-250414"
+      "endpoint": "http://127.0.0.1:11435/chat/completions",
+      "model": "Qwen3.5-2B"
     },
     "opencode": { "enabled": true, "dir": "/tmp" }
   }
