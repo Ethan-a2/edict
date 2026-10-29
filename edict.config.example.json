@@ -4,7 +4,7 @@
     "port": 8787,
     "timeoutMs": 30000
   },
-  "defaultBackend": "caiyun",
+  "defaultBackend": "builtin_ai",
   "credentials": {
     "easydict": {
       "enabled": true,
@@ -14,11 +14,11 @@
   },
   "backends": {
     "youdao_web": { "enabled": true },
-    "caiyun": { "enabled": true },
+    "caiyun": { "enabled": false },
     "builtin_ai": {
       "enabled": true,
       "endpoint": "http://127.0.0.1:11435/chat/completions",
-      "model": "Qwen3.5-2B"
+      "model": "Qwen3.5-2B-Q4_K_M"
     },
     "opencode": { "enabled": true, "dir": "/tmp" }
   }
